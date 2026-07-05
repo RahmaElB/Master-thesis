@@ -1,0 +1,2 @@
+test_loss,test_acc,test_f1,test_auc,best_val_auc,num_epochs,batch_size,num_frames,img_size,ef_threshold,dropout,lr,weight_decay,pretrained,total_runtime_sec
+0.6282096239347988,0.7768206734534064,0.874394006170119,0.5675491652518392,0.5923016442047584,10,2,32,224,50.0,0.3,0.0001,0.0001,True,8020.644849538803

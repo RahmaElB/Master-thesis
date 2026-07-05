@@ -1,0 +1,10 @@
+num_frames,period,frames_of_real_video_needed,pct_videos_long_enough_for_full_span
+16,1,16,100.0
+16,2,31,100.0
+16,4,61,99.5
+32,1,32,100.0
+32,2,63,99.5
+32,4,125,88.0
+64,1,64,99.4
+64,2,127,86.9
+64,4,253,5.2

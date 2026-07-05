@@ -1,0 +1,2 @@
+test_loss,test_acc,test_f1,test_auc,best_val_auc,num_epochs,batch_size,num_frames,img_size,ef_threshold,total_runtime_sec
+0.5165997043294108,0.8347689898198903,0.8875865743207245,0.920097623089983,0.9326489118876662,10,4,16,112,50.0,2170.1416716575623

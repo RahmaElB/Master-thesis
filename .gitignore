@@ -1,0 +1,25 @@
+data/
+checkpoints/
+
+# Logs
+slurm-*.out
+
+# Python
+__pycache__/
+*.pyc
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Models
+*.pt
+*.pth
+*.ckpt
+
+# wandb
+wandb/
+
+# Misc
+*.log
+*.tmp
+.DS_Store
