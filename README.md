@@ -135,7 +135,7 @@ collapse was fixed (see Discussion in the thesis for the fix), both clearly
 ahead of the frame-averaging baseline and CNN+LSTM - though CNN+LSTM's
 headline accuracy is misleading (see Phase 3 below).
 
-## Experiments (Phases 1-9)
+## Experiment
 
 The later phases reuse the same trained checkpoints where possible. 
 Most require only additional evaluation or analysis of saved predictions rather than retraining.
