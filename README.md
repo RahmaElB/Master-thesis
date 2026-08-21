@@ -16,35 +16,112 @@ function, based on ejection fraction (EF):
 Using the EchoNet-Dynamic dataset (10,030 echo videos with EF labels and
 official train/val/test splits; 7,465 / 1,288 / 1,277).
 
-Four models compared: a ResNet18 frame-averaging baseline, ResNet18+LSTM,
+Four models compared: a ResNet18 frame averaging baseline, ResNet18+LSTM,
 R3D-18 (3D CNN), and Swin3D-T (video transformer, Kinetics-400 pretrained).
+
+Beyond the initial 4 way comparison, the project also covers: dataset
+distribution analysis, full evaluation outputs (confusion matrix/ROC/PR),
+robustness to random seed, data augmentation, robustness to image quality
+degradation, sensitivity to the EF classification threshold, a per sample
+error/"grey zone" analysis, and an exploratory EF regression model. See
+[Experiments](#experiments-phases-1-9) below.
+
+## Development environment
+
+- **Cluster**: CSC Roihu (migrated from Puhti mid-project - see note below)
+- **Python**: 3.12 (via CSC's `python-data` module for CPU-only scripts;
+  Apptainer container for anything using PyTorch)
+- **PyTorch**: 2.10.0+cu130 (delivered as an Apptainer container,
+  `containers/pytorch_2.10_cuda13_roihu.sif` - Roihu has no plain `pytorch`
+  module, PyTorch is only available this way)
+- **CUDA**: 13.0
+- **GPU**: NVIDIA GH200 (Grace Hopper, 120GB), via Slurm partition
+  `gpumedium`, gres `gpu:gh200:1`
+- **Key libraries**: torchvision, opencv-python-headless, pandas, numpy,
+  scikit-learn, scipy, matplotlib (see `requirements.txt`)
+
+**Note on Puhti → Roihu migration**: this project started on CSC Puhti
+(NVIDIA V100 GPUs, plain `module load pytorch`) and was migrated to CSC
+Roihu partway through (GH200 GPUs, ARM/x86 split login nodes, PyTorch only
+via Apptainer container). All `scripts/*.sh` reflect the current Roihu
+setup. `results/history/` contains some early runs from the Puhti era
+(pre-refactor, uniform frame sampling).
 
 ## Repo layout
 
 ```
 src/
-  data/          # video I/O, frame sampling (uniform vs clip), EDA script
+  data/          # video I/O, frame sampling (uniform vs clip), augmentation,
+                 # quality degradation, EDA script
   models/        # the 4 model definitions
-  engine/        # train/eval loop, LR scheduling, wandb wrapper
+  engine/        # train/eval loop, LR scheduling, metrics, plotting, wandb wrapper
   interpret/     # Grad-CAM + occlusion sensitivity
-  train.py       # single entry point: python -m src.train --model {baseline,cnn_lstm,r3d,swin3d}
-scripts/         # sbatch scripts for Puhti (one per model + EDA + interpretability)
+  train.py               # entry point: python -m src.train --model {baseline,cnn_lstm,r3d,swin3d}
+  train_regression.py    # EF regression (continuous target, R3D-18 backbone)
+  evaluate.py             # full-metric evaluation of a trained checkpoint (Acc/Prec/Rec/Spec/F1/AUC/CM/ROC/PR)
+  evaluate_quality.py     # image-quality degradation robustness sweep
+  evaluate_ef_threshold.py # EF threshold sensitivity sweep (40-70%)
+  analyze_grey_zone.py    # per sample error analysis / EF "grey zone"
+  analyze_regression.py   # EF regression results analysis
+  compare_models.py       # combined ROC/PR/summary table across all 4 architectures
+  aggregate_seeds.py      # multi-seed mean +/- std aggregation
+
+scripts/                 # sbatch scripts for CSC Roihu
+  run_baseline.sh, run_cnn_lstm.sh, run_r3d.sh, run_swin3d.sh
+  run_eda.sh, run_interpretability.sh
+  evaluation/             # per-checkpoint full-metric evaluation jobs
+  robustness_seeds/       # multi-seed training jobs
+  augmentation/           # augmented training jobs
+  quality_robustness/     # quality degradation evaluation jobs
+  regression/             # EF regression training job
+
 notebooks/
   echonet_baseline_cpu.ipynb   # early exploratory notebook (CPU-friendly quick baseline)
-  results_analysis.ipynb        # all the plots/comparisons below, already run - open and read, no GPU or dataset needed
+  results_analysis.ipynb        # plots/comparisons, already run - open and read, no GPU or dataset needed
+
 results/
-  *_history.csv / *_test.csv   # current best run per model
-  history/                      # runs from before I reorganized the code (uniform sampling)
-  eda/                           # video length histogram / distribution, from the real dataset
-  interpretability/               # Grad-CAM (R3D) + occlusion sensitivity (Swin3D) overlays
-logs/            # slurm .out logs, matching results/
+  training/        # *_history.csv / *_test.csv per model, including seed/augmentation/regression variants
+  eda/              # video length + EF distribution, class balance
+  evaluation/       # full metrics, confusion matrices, ROC/PR curves, per-sample predictions
+  robustness/       # multi-seed mean +/- std summaries
+  ef_threshold/     # EF threshold sensitivity sweep results
+  grey_zone/        # per-sample error analysis / grey-zone plots
+  quality_robustness/  # image-quality degradation sweep results
+  regression/       # EF regression analysis (true vs. predicted EF, error vs. EF)
+  interpretability/ # Grad-CAM (R3D) + occlusion sensitivity (Swin3D) overlays
+  history/          # early Puhti-era runs (pre-refactor, uniform sampling) - kept as historical record
+
+logs/               # slurm .out logs
+
+checkpoints/        # trained model weights - NOT in git (see .gitignore), regenerate via scripts/
+containers/         # Apptainer .sif image - NOT in git (9GB), pull via the command in Setup below
 ```
 
 `notebooks/results_analysis.ipynb` has already been run, all the plots and
 tables are saved in it, so it can just be read top to bottom without needing
 the dataset, a GPU, or the model checkpoints.
 
-## Current results
+## Setup (CSC Roihu)
+
+```bash
+export ECHO_DATA_ROOT=/scratch/project_2018481/echonet
+export ECHO_PROJECT_ROOT=/scratch/project_2018481/thesis_project6
+export PYTHONPATH=$ECHO_PROJECT_ROOT
+cd $ECHO_PROJECT_ROOT
+
+# Pull the PyTorch container once (not tracked in git - ~9GB)
+mkdir -p containers
+apptainer pull containers/pytorch_2.10_cuda13_roihu.sif \
+    docker://satama.csc.fi/r_installation_aida/pytorch:2.10_cuda13_roihu
+```
+
+Every `scripts/*.sh` job wraps its Python call in
+`apptainer exec --nv containers/pytorch_2.10_cuda13_roihu.sif python3 ...`.
+CPU-only scripts (EDA, comparison/aggregation scripts that just read saved
+CSVs) instead use `module load python-data/3.12-31.03` and run directly on
+the login node, no GPU or container needed.
+
+## Current results (4-way model comparison)
 
 | model     | test AUC | test acc | test F1 | epochs |
 |-----------|----------|----------|---------|--------|
@@ -53,190 +130,72 @@ the dataset, a GPU, or the model checkpoints.
 | **R3D**   | **0.934**| 0.874    | 0.917   | 12 |
 | Swin3D    | 0.912    | 0.869    | 0.916   | 15 |
 
-R3D is the best model right now, Swin3D a close second once its collapse was
-fixed, both clearly ahead of the frame-averaging baseline and CNN+LSTM,
-though the gap across all four ended up smaller than I expected going in.
-All four use clip-based sampling with a random start every training epoch
-(64 frames for baseline/CNN+LSTM/R3D, 32 for Swin3D).
+R3D-18 is the best model overall, Swin3D-T a close second once its training
+collapse was fixed (see Discussion in the thesis for the fix), both clearly
+ahead of the frame-averaging baseline and CNN+LSTM - though CNN+LSTM's
+headline accuracy is misleading (see Phase 3 below).
 
-## The R3D story
+## Experiments (Phases 1-9)
 
-First attempt at porting R3D to the new clip-sampling code gave it the same
-backbone/head learning-rate split I'd used to fix Swin3D (backbone at 1e-5,
-head at 1e-4). Two 15-epoch runs with that setup both landed around **test
-AUC 0.90-0.91**, worse than the original pre-refactor R3D result
-(0.936-0.938), and both showed val_loss climbing steadily from ~0.6 to
-1.3-1.5 while train accuracy raced to 0.98. Classic overfitting.
+The later phases reuse the same trained checkpoints where possible. 
+Most require only additional evaluation or analysis of saved predictions rather than retraining.
 
-Turned out the LR split was the wrong fix for this model. Freezing R3D's
-backbone down to 1e-5 was specifically what Swin3D needed because Swin3D was
-*collapsing*, but R3D was never collapsing, so all that split did here was
-leave the head to fit rapidly on top of barely-moving features, without the
-backbone adapting alongside it to keep things regularized.
+1. **Baseline reproducibility** (`src/evaluate.py`): full documented
+   metric set (Accuracy/Precision/Recall/Specificity/F1/ROC-AUC/confusion
+   matrix) plus a "frozen record" JSON of every hyperparameter, for all 4
+   models. -> `results/evaluation/*_frozen_record.json`
 
-Dropped `--backbone_lr` entirely (single LR of 1e-4 for the whole network,
-matching the original pre-refactor setup) and re-ran at 8 epochs as a check,
-then 12:
+2. **Dataset analysis** (`src/data/eda.py`), EF distribution (skewness,
+   normality test), class balance at multiple thresholds, video-length
+   distribution, sampling coverage. -> `results/eda/`. EF is notably
+   left-skewed (skewness -1.33); at the 50% threshold the dataset is 22.4%
+   Abnormal / 77.6% Normal.
 
-| attempt | backbone LR split? | epochs | test AUC | val_loss trend |
-|---------|--------------------|--------|----------|-----------------|
-| 1 & 2   | yes (1e-5)         | 15     | 0.901-0.902 | 0.6 → 1.3-1.5 (exploding) |
-| 3       | no                 | 8      | 0.923    | 0.52 → 0.63 (stable) |
-| 4 (final) | no               | 12     | **0.934**| 0.47 → 0.61 (stable) |
+3. **Complete evaluation outputs** (`src/engine/plots.py`,
+   `src/compare_models.py`): ROC curves, PR curves, confusion-matrix
+   heatmaps per model, plus a combined 4-model comparison.
+   -> `results/evaluation/`. Finding: CNN+LSTM has the highest raw accuracy
+   but by far the weakest sensitivity to Abnormal cases (0.49), a case
+   study in why accuracy alone is misleading here.
 
-Best epoch in the final run was epoch 7 (val_auc 0.937); epochs 8-12 hovered
-around 0.92-0.93 without clearly beating it, so training is basically
-plateaued by then. `scripts/run_r3d.sh` reflects the fix (no `--backbone_lr`,
-`--epochs 12`). See `notebooks/results_analysis.ipynb` section 2 for the
-before/after loss and AUC curves.
+4. **Seed robustness** (`src/aggregate_seeds.py`), each model retrained
+   with 2 additional random seeds (3 total), reporting mean +/- std.
+   -> `results/robustness/`. AUC is very stable across seeds (std
+   0.002-0.006 for all 4 models); Accuracy/F1 are noticeably less stable
+   for the baseline specifically (std ~0.02).
 
-This result also isn't strictly apples-to-apples with the old 0.936-0.938
-number, since this run also has random-start temporal augmentation (a
-different 64-frame window each epoch), which the old uniform-sampling runs
-didn't have. Landing back in the same range despite that extra variability
-seems like a fine outcome, maybe a slightly more robust one, even without
-being higher than before.
+5. **Data augmentation** (`src/data/augmentation.py`), small rotation,
+   random-resized-crop, brightness/contrast jitter, applied only to the
+   training split. No flipping (chamber left/right layout is diagnostically
+   meaningful in an A4C view). -> `results/training/*_aug_test.csv`.
+   Helped 3/4 models modestly. For CNN+LSTM, Accuracy/F1 decreased substantially while AUC stayed almost unchanged, suggesting an effect on the classification threshold rather than the ranking of predictions.
 
-## The Swin3D story
+6. **Image-quality robustness** (`src/data/degradation.py`,
+   `src/evaluate_quality.py`), controlled, deterministic degradation
+   (blur+resolution loss+noise together, 4 severity levels) applied at
+   evaluation time to already-trained checkpoints. -> `results/quality_robustness/`.
+   Finding: Baseline/CNN+LSTM/R3D-18 all collapse toward predicting the
+   majority class ("Normal") under degradation (sensitivity_abnormal drops
+   toward 0.15-0.31); Swin3D-T fails in the *opposite* direction, becoming
+   less accurate than a trivial majority-class baseline under
+   moderate/severe degradation.
 
-The very first Swin3D run (before any of this reorganization) never learned
-anything, val_acc/val_f1 identical every single epoch, val_auc stuck at
-~0.55-0.59 (chance level). Diagnosis: LR of 1e-4 applied to the whole
-pretrained transformer at once, no warmup, batch size 2, the pretrained
-features got wrecked before the new head had learned anything to guide them.
+7. **EF threshold sensitivity** (`src/evaluate_ef_threshold.py`):
+   re-derives ground truth at thresholds 40-70% from the already-saved
+   predicted probabilities (no retraining). -> `results/ef_threshold/`.
+   ROC-AUC decreases *monotonically* from 40% to 70% for every model, no
+   peak at 50%; models are best at detecting severely reduced EF and
+   weakest distinguishing mildly-reduced from normal.
 
-Fix: backbone frozen for the first 2 epochs, separate LR for backbone
-(1e-5) vs head (1e-3), linear warmup + cosine decay, gradient clipping,
-effective batch size 16 via gradient accumulation. With that, val_auc climbs
-cleanly from 0.68 (epoch 1, backbone still frozen) to 0.909 (best, epoch 11),
-test AUC 0.912.
+8. **Error analysis / EF "grey zone"** (`src/analyze_grey_zone.py`), bins
+   per-sample errors by distance from the 50% boundary.
+   -> `results/grey_zone/`. Error rate is ~40% for videos within 5 EF points of the boundary, compared with <10% (often <2%) for videos 15+ points away. This pattern appears for all four models.
 
-So the R3D and Swin3D fixes ended up being opposite prescriptions for
-opposite problems: Swin3D needed its backbone protected with a much smaller
-LR because it was collapsing; R3D needed the *opposite* (one LR for the
-whole network) because it was already learning fine and the split just made
-it overfit faster. Worth stating explicitly in the discussion, the lesson
-isn't "transformers need X", it's "diagnose per-model, a fix that worked for
-one architecture isn't automatically the right one for another."
-
-## EDA: real dataset numbers (`results/eda/`)
-
-Ran against the actual `FileList.csv` (10,030 videos):
-
-- mean video length: 176.5 frames (std 57.9), min 28, max 1002
-- only **0.57%** of videos have fewer than 64 frames
-- at `num_frames=64, period=1` (what R3D/baseline/CNN+LSTM use), **99.4%**
-  of videos are long enough for a genuinely full 64-frame span
-
-So "go with 64" is a safe choice for this dataset specifically. This is also
-the answer to why 32 frames looked competitive in the old uniform-sampling
-runs: with uniform sampling the model always saw "the whole video,
-compressed to 32 samples" regardless of true length, and most videos are on
-the shorter side to begin with, with clip sampling that stops being true.
-
-## Interpretability (`results/interpretability/`)
-
-Ran both Grad-CAM (R3D) and occlusion sensitivity (Swin3D, since it has no
-conv layer to hook Grad-CAM into) against the same 8 test videos, chosen
-within 5 EF points of the 50 threshold, the genuinely hard cases.
-
-| video | EF | true label | R3D | Swin3D |
-|---|---|---|---|---|
-| 0X6BA7CB2E44532208 | 54.7 | Normal | correct | correct |
-| 0X608ED3201BB2F9A  | 53.0 | Normal | correct | correct |
-| 0X1D393AED88F9D056 | 45.3 | Abnormal | correct | wrong (pred Normal) |
-| 0X4A0C7C0FE8253F6E | 52.8 | Normal | correct | correct |
-| 0X73CBCADA2191104C | 49.5 | Abnormal | wrong (pred Normal) | correct |
-| 0X86643606EDB99E8  | 53.3 | Normal | correct | correct |
-| 0X45357AC4B9F02268 | 45.4 | Abnormal | correct | correct |
-| 0X3B80677CE0873E50 | 49.8 | Abnormal | wrong (pred Normal) | wrong (pred Normal) |
-
-Both models get **6/8** right on this hard subset, same hit rate, but they
-don't miss the same cases (R3D misses one, Swin3D misses a different one),
-and only one video (0X3B80677CE0873E50, EF 49.8, the single closest case to
-the threshold in the whole set) fools both. That complementary error pattern
-is a reasonable argument for trying an ensemble of the two as future work,
-even without time to build one now.
-
-The two cases both models miss are worth a specific mention in the
-discussion: both are Abnormal (EF just under 50) predicted as Normal, i.e.
-false negatives right at the boundary, arguably the hardest kind of error
-this task can produce, a couple of EF points on the wrong side of a
-clinically somewhat arbitrary cutoff.
-
-Heatmaps for both models qualitatively concentrate around the central
-chamber region of the echo fan rather than scattering across the frame,
-which is at least a sanity check that neither model is keying off scan
-artifacts or the probe marker, but I'm not qualified to say whether it's
-specifically tracking the left ventricle without a clinician's eye on it.
-Worth showing to Iván.
-
-## Weights & Biases
-
-Working now, got a wandb.ai account set up, and since Puhti's compute nodes
-don't have internet, training logs locally first and syncs automatically
-once wandb is logged in. Project dashboard:
-https://wandb.ai/elbouazzaouirahma8-bo-akademi/echonet-thesis
-
-Only the R3D debugging runs (attempts 1, 3, 4 above) are logged there, since
-baseline/CNN+LSTM/Swin3D all finished training before I had wandb set up.
-Didn't think it was worth re-running those three (3.5-5.5 hours of V100 time
-combined) purely to get them into wandb, since their full per-epoch numbers
-already live in `results/*_history.csv` and are plotted in
-`notebooks/results_analysis.ipynb` anyway, same information, no GPU cost.
-The R3D dashboard on its own is genuinely useful though: the broken run's
-train/val loss divergence is much easier to see as a live curve than
-scrolling a CSV, which is part of how the LR-split diagnosis above got made.
-
-## How to run things
-
-```bash
-pip install -r requirements.txt
-
-export ECHO_DATA_ROOT=/scratch/project_2018481/relbouaz/echonet
-export ECHO_PROJECT_ROOT=/scratch/project_2018481/relbouaz/thesis_project5
-export PYTHONPATH=$ECHO_PROJECT_ROOT
-
-python -m src.data.eda --csv_path $ECHO_DATA_ROOT/FileList.csv --out_dir results/eda
-
-python -m src.train --model r3d --num_frames 64 --temporal_sampling clip \
-    --clip_period 1 --lr 1e-4 --epochs 12 --grad_clip 1.0 --use_wandb
-
-python -m src.interpret.run_interpretability --model r3d \
-    --checkpoint checkpoints/r3d_64f_112px_clipp1_pretrained_best.pt \
-    --num_frames 64 --img_size 112 --temporal_sampling clip --clip_period 1 \
-    --num_examples 8 --out_dir results/interpretability
-
-python -m src.interpret.run_interpretability --model swin3d \
-    --checkpoint checkpoints/swin3d_32f_224px_clipp2_pretrained_best.pt \
-    --num_frames 32 --img_size 224 --temporal_sampling clip --clip_period 2 \
-    --num_examples 8 --out_dir results/interpretability
-```
-
-Or just use the sbatch scripts in `scripts/`, all of them already reflect
-the fixed configs described above. Model checkpoints aren't included in this
-zip (too large to share this way), `notebooks/results_analysis.ipynb` and
-everything in `results/` and `logs/` don't need them, only re-training does.
-
-## References
-
-- Ouyang, D., He, B., Ghorbani, A., Lungren, M. P., Ashley, E. A., Liang, D.
-  H., & Zou, J. Y. (2019). EchoNet-Dynamic: a large new cardiac motion video
-  data resource for medical machine learning. *NeurIPS ML4H Workshop*.
-- Magyar, B. et al. (2022). RVENet: A large echocardiographic dataset for the
-  deep learning-based assessment of right ventricular function. *ECCV*.
-- Bizopoulos, P., & Koutsouris, D. (2018). Deep learning in cardiology.
-  *IEEE Reviews in Biomedical Engineering*, 12, 168-193.
-- Patrianakos, A. P., Zacharaki, A. A., Skalidis, E. I., Hamilos, M. I.,
-  Parthenakis, F. I., & Vardas, P. E. (2017). The growing role of
-  echocardiography in interventional cardiology. *Hellenic Journal of
-  Cardiology*, 58(1), 17-31.
-- Sutanto, H. (2024). Transforming clinical cardiology through neural
-  networks and deep learning. *Current Problems in Cardiology*, 49(4).
-- Tong, Z., Song, Y., Wang, J., & Wang, L. (2022). VideoMAE: Masked
-  autoencoders are data-efficient learners for self-supervised video
-  pre-training. *NeurIPS*.
-- Ravi, N. et al. (2024). SAM 2: Segment anything in images and videos.
-  *arXiv:2408.00714*.
-- Selvaraju, R. R. et al. (2017). Grad-CAM: Visual explanations from deep
-  networks via gradient-based localization. *ICCV*.
+9. **EF regression** (`src/train_regression.py`,
+   `src/analyze_regression.py`); R3D-18 backbone, continuous EF target,
+   MSE loss. -> `results/regression/`. Test MAE=4.83, RMSE=6.63, R²=0.706
+   (in line with published EchoNet-Dynamic regression benchmarks). A
+   classifier derived by thresholding the regression output at 50% matches
+   or slightly exceeds the purpose-trained R3D-18 classifier on
+   Accuracy/F1/AUC, though with lower sensitivity to Abnormal cases.
+   Regression error does not show the same concentration around the 50% boundary (p=0.15). This suggests that part of the grey-zone effect observed in classification may come from converting continuous EF values into binary labels.

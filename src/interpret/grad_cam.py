@@ -1,20 +1,20 @@
 """
-Interpretability, requested by my supervisor: "try to work on the
-interpretability of the model".
+Interpretability analysis added
+to look at what the models are actually using for their predictions. 
+I use two methods because the four architectures work differently. 
+Grad-CAM (Selvaraju et al., 2017) is used for the baseline, CNN+LSTM, and R3D models, 
+since these have convolutional layers that I can hook into. 
 
-Two methods, because the four models aren't all convolutional:
+The resulting heatmaps show which regions of the sampled frames contributed most to the prediction. 
+For a meaningful cardiac prediction, I would expect the model to focus mainly around the left ventricle 
+rather than unrelated parts of the frame. 
 
-- Grad-CAM (Selvaraju et al., 2017): works for the baseline, CNN+LSTM and R3D
-  models since they all have a normal conv backbone I can hook into. Produces
-  a heatmap over each sampled frame showing which regions drove the
-  prediction - ideally the left ventricle.
-
-- Occlusion sensitivity: a model-agnostic fallback that works for Swin3D too
-  (Grad-CAM needs a conv layer to hook, and hooking into window attention
-  blocks is a lot more involved). It works by masking out patches of a frame
-  one at a time and measuring how much the predicted probability drops,
-  bigger drop = that patch mattered more. Slower, but architecture-agnostic
-  and a fair comparison across all four models.
+For Swin3D I use occlusion sensitivity instead. Grad-CAM is not 
+as straightforward here because Swin3D is based on window attention rather than a standard convolutional backbone. 
+Occlusion sensitivity does not depend on a particular architecture: it masks patches of the input one at a
+ time and measures how much the predicted probability changes. A larger drop means that region was more
+  important for the prediction. It is slower than Grad-CAM, but it also gives me a method that can be
+   applied across all four architectures.
 """
 
 from typing import List
@@ -101,14 +101,14 @@ def compute_gradcam_r3d(model, video_3d: torch.Tensor, target_class: int = None)
 
 def compute_gradcam_2d_backbone(model, video_2d: torch.Tensor, target_class: int = None):
     """
-    For baseline / cnn_lstm: these process frames through a shared 2D ResNet
-    backbone and then combine over time (mean or LSTM), so we can't get a
-    single clean backward pass CAM per frame with one call - instead we run
-    the full model once to get the predicted class, then compute a per-frame
-    CAM by backpropagating from the frame's own contribution to that logit.
-
-    video_2d: (1, T, C, H, W)
-    Returns per-frame CAMs of shape (T, H, W).
+    Grad-CAM for the baseline and CNN+LSTM models. 
+    Both models first process all frames with the same 2D ResNet 
+    backbone and then combine the frame features over time, using 
+    either temporal averaging or the LSTM. The backbone therefore sees the 
+    frames as a flattened batch rather than as a 3D feature map. 
+    I hook into the last ResNet convolutional layer and use the activations 
+    and gradients for each frame to build a separate CAM. video_2d has shape (1, T, C, H, W), 
+    and the returned CAMs have shape (T, H, W).
     """
     model.zero_grad()
     logits = model(video_2d)
@@ -162,14 +162,13 @@ def occlusion_sensitivity(
     baseline_value: float = 0.0,
 ) -> np.ndarray:
     """
-    Model-agnostic interpretability, used for Swin3D where Grad-CAM isn't a
-    good fit. Slides an occluding patch over each sampled frame and records
-    how much the predicted probability for target_class drops. Works on
-    whatever tensor layout the model expects (2D or 3D family) as long as
-    `video` is already the exact model input, shape (1, ...).
-
-    Returns an importance map, one per sampled frame: shape (T, H_frame, W_frame)
-    scaled to [0, 1] (higher = more important).
+    Occlusion sensitivity used mainly for Swin3D, where Grad-CAM is not as straightforward to apply. 
+    The idea is to mask one patch of the input at a time and run the model again. I compare the new 
+    probability for target_class with the original probability; if masking a region causes a large drop, 
+    that region was important for the prediction. The function works with either of the tensor layouts 
+    used in this project, as long as video already has the shape expected by the model. It returns one 
+    importance map per sampled frame with shape (T, H_frame, W_frame), normalized to [0, 1], where 
+    larger values indicate more important regions.
     """
     model.eval()
     with torch.no_grad():

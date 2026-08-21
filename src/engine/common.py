@@ -1,5 +1,5 @@
 import random
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -24,9 +24,7 @@ def get_class_weights(train_labels: np.ndarray) -> torch.Tensor:
 
 
 def build_warmup_cosine_scheduler(optimizer, total_steps: int, warmup_steps: int):
-    """Linear warmup then cosine decay to 0, per parameter group.
-    This is what was missing for Swin3D - jumping straight to the target LR
-    on step 1 for a pretrained transformer is a big part of why it collapsed."""
+    """Warm up the learning rate linearly, then decay it with a cosine schedule.."""
     warmup_steps = max(1, min(warmup_steps, total_steps - 1)) if total_steps > 1 else 1
 
     def lr_lambda(step):
@@ -77,7 +75,7 @@ def train_one_epoch(
         all_preds.extend(preds.detach().cpu().numpy())
         all_targets.extend(y.detach().cpu().numpy())
 
-    # flush any leftover accumulated gradients
+    # Apply the final optimizer step if the epoch ends before completing an accumulation cycle
     if len(loader) % grad_accum_steps != 0:
         if grad_clip is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
@@ -98,6 +96,7 @@ def evaluate(
     criterion: nn.Module,
     device: torch.device,
 ) -> Tuple[float, float, float, float]:
+    """Evaluate the model on one full validation pass and return loss, accuracy, F1, and AUC."""
     model.eval()
     running_loss = 0.0
     all_preds: List[int] = []
@@ -130,3 +129,47 @@ def evaluate(
         epoch_auc = float("nan")
 
     return epoch_loss, epoch_acc, epoch_f1, epoch_auc
+
+
+def predict_all(
+    model: nn.Module,
+    loader: DataLoader,
+    device: torch.device,
+) -> Dict[str, np.ndarray]:
+    """
+    Run a single inference pass over an entire loader and return per-sample
+    arrays instead of aggregate metrics. This is the shared building block
+    for:
+      - Phase 1: full-metric "frozen" evaluation of a trained checkpoint
+        (src/evaluate.py + src/engine/metrics.py)
+      - Phase 7: EF threshold sensitivity sweep, re-threshold these same
+        saved probabilities at 40/45/.../70% without re-running the model
+      - Phase 8: error-vs-EF / grey zone analysis, needs exactly this
+        (filename, true EF, true label, predicted probability) table
+
+    Deliberately returns raw probabilities rather than thresholded
+    predictions, so any threshold can be applied afterwards.
+    """
+    model.eval()
+    filenames: List[str] = []
+    efs: List[float] = []
+    labels: List[int] = []
+    probs: List[float] = []
+
+    with torch.no_grad():
+        for batch in loader:
+            x = batch["video"].to(device, non_blocking=True)
+            logits = model(x)
+            p = torch.softmax(logits, dim=1)[:, 1]
+
+            filenames.extend(batch["filename"])
+            efs.extend(batch["ef"].cpu().numpy().tolist())
+            labels.extend(batch["label"].cpu().numpy().tolist())
+            probs.extend(p.cpu().numpy().tolist())
+
+    return {
+        "filename": np.array(filenames),
+        "ef": np.array(efs, dtype=float),
+        "label": np.array(labels, dtype=int),
+        "prob": np.array(probs, dtype=float),
+    }

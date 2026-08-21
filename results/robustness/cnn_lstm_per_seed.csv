@@ -1,0 +1,4 @@
+run_name,model,test_loss,test_acc,test_f1,test_auc,best_val_auc,num_epochs,batch_size,num_frames,img_size,temporal_sampling,clip_period,ef_threshold,lr,backbone_lr,weight_decay,dropout,grad_clip,grad_accum_steps,warmup_frac,freeze_epochs,pretrained,total_runtime_sec
+cnn_lstm_64f_112px_clipp1_pretrained,cnn_lstm,0.4771886531616574,0.860610806577917,0.9150763358778626,0.8998443689869835,0.8973887382191881,15,4,64,112,clip,1,50.0,0.0001,,0.0001,0.3,,1,0.0,0,True,5467.482691287994
+cnn_lstm_64f_112px_clipp1_pretrained_seed123,cnn_lstm,0.4693382654416381,0.8598277212216131,0.9076843733883444,0.9080291454442556,0.903034522411685,15,4,64,112,clip,1,50.0,0.0001,,0.0001,0.3,,1,0.0,0,True,660.5100111961365
+cnn_lstm_64f_112px_clipp1_pretrained_seed2024,cnn_lstm,0.3958626148657773,0.874706342991386,0.9196787148594378,0.8979485002829655,0.9026812279407436,15,4,64,112,clip,1,50.0,0.0001,,0.0001,0.3,,1,0.0,0,True,654.9699900150299

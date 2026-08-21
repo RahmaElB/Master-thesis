@@ -1,0 +1,18 @@
+{
+  "model": "cnn_lstm",
+  "checkpoint": "checkpoints/cnn_lstm_64f_112px_clipp1_pretrained_best.pt",
+  "data_root": "/scratch/project_2018481/echonet",
+  "num_frames": 64,
+  "img_size": 112,
+  "temporal_sampling": "clip",
+  "clip_period": 1,
+  "batch_size": 8,
+  "num_workers": 4,
+  "ef_threshold": 50.0,
+  "classification_threshold": 0.5,
+  "split": "test",
+  "seed": 42,
+  "dropout": 0.3,
+  "out_dir": "results/quality_robustness",
+  "run_name": null
+}

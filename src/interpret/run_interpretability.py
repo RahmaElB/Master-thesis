@@ -1,16 +1,9 @@
 """
-Generates interpretability overlays for a handful of test videos, including
-ones near the EF=50 decision boundary (the cases my supervisor is most
-interested in for error analysis).
-
-Usage example:
-    python -m src.interpret.run_interpretability \
-        --model r3d --checkpoint checkpoints/r3d18_64f_best.pt \
-        --num_frames 64 --img_size 112 --temporal_sampling clip --clip_period 1 \
-        --num_examples 6 --out_dir results/interpretability
-
-For Swin3D, Grad-CAM isn't applicable (no conv layer to hook), so this script
-automatically falls back to occlusion sensitivity for that model.
+Generate interpretability overlays for a small set of test videos. 
+I include examples close to the EF=50 decision boundary because these are especially 
+useful for error analysis. Usage example: ... Grad-CAM is used for the convolutional models. For Swin3D, where 
+there is no standard convolutional layer to hook into in the same way, the script uses 
+occlusion sensitivity instead when method="auto".
 """
 
 import argparse
@@ -131,10 +124,7 @@ def main():
         else:
             cam_full, pred_class = occlusion_sensitivity(model, video, patch_size=16, stride=16)
 
-        # Re-decode the exact raw (un-normalized) frames the dataset sampled,
-        # by re-running the same deterministic sampler used for the test
-        # split, so the overlay is drawn on real pixel values instead of a
-        # normalized tensor.
+        # Re-decode the same sampled frames without normalization so the overlays are drawn on the original pixel values.
         video_path = os.path.join(video_dir, f"{filename}.avi")
 
         example_dir = os.path.join(args.out_dir, f"{args.model}_{filename}_EF{ef:.0f}_label{label}")

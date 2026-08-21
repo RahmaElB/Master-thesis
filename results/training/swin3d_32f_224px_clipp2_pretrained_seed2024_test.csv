@@ -1,0 +1,2 @@
+run_name,model,test_loss,test_acc,test_f1,test_auc,best_val_auc,num_epochs,batch_size,num_frames,img_size,temporal_sampling,clip_period,ef_threshold,lr,backbone_lr,weight_decay,dropout,grad_clip,grad_accum_steps,warmup_frac,freeze_epochs,pretrained,total_runtime_sec
+swin3d_32f_224px_clipp2_pretrained_seed2024,swin3d,0.42395361461546066,0.8692247454972593,0.9169567379413227,0.9154463780418789,0.9102354950105815,15,2,32,224,clip,2,50.0,0.001,1e-05,0.0001,0.3,1.0,8,0.1,2,True,3474.1903705596924

@@ -1,6 +1,6 @@
 """
 Thin wrapper around wandb so the rest of the code doesn't need to care whether
---use_wandb was passed, or whether wandb is even installed on the cluster.
+use_wandb was passed, or whether wandb is even installed on the cluster.
 
 """
 
@@ -19,7 +19,7 @@ class WandbLogger:
             import wandb
             self._wandb = wandb
             self._wandb.init(project=project, name=run_name, config=config)
-        except Exception as e:  # pragma: no cover - defensive, cluster may lack wandb/network
+        except Exception as e:  # cluster may lack wandb/network
             print(f"[wandb] could not initialize ({e}); continuing without wandb logging.")
             self.enabled = False
             self._wandb = None

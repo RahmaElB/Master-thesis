@@ -1,0 +1,2 @@
+run_name,model,test_loss,test_acc,test_f1,test_auc,best_val_auc,num_epochs,batch_size,num_frames,img_size,temporal_sampling,clip_period,ef_threshold,lr,backbone_lr,weight_decay,dropout,grad_clip,grad_accum_steps,warmup_frac,freeze_epochs,pretrained,augment,total_runtime_sec
+r3d_64f_112px_clipp1_pretrained_aug,r3d,0.4266070164915119,0.8833202819107283,0.9240183579806222,0.9340018392756084,0.9403417258088538,12,4,64,112,clip,1,50.0,0.0001,,0.0001,0.3,1.0,1,0.0,0,True,True,1128.5548062324524

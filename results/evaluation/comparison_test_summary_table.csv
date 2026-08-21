@@ -1,0 +1,5 @@
+model,accuracy,precision_normal,recall_normal,f1_normal,sensitivity_abnormal,specificity_abnormal,roc_auc
+"Baseline (CNN, avg.)",0.823,0.9485,0.8165,0.8776,0.8456,0.8165,0.9084
+CNN + LSTM,0.8606,0.8687,0.9667,0.9151,0.4912,0.9667,0.8999
+R3D-18,0.8739,0.9369,0.8982,0.9171,0.7895,0.8982,0.9342
+Swin3D-T,0.8669,0.9127,0.9163,0.9145,0.6947,0.9163,0.9121

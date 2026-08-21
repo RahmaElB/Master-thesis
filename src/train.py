@@ -1,15 +1,13 @@
 """
 Single training entry point for all four models.
 
-The first version of this project had train.py / train_cnn_lstm.py /
-train_r3d.py / train_swin3d.py as four almost-identical files (same dataset
-class, same read_video_opencv, same train/eval loops copy-pasted four times).
-That's how the R3D checkpoint-naming bug slipped in (best_model_path didn't
-include num_frames, so 16f/32f/64f runs silently overwrote each other's
-checkpoint) and it made it easy for the four scripts to quietly drift apart.
-Consolidating into one script + a shared src/engine and src/models package
-fixes that class of bug and makes every run's config fully reproducible from
-its command line + saved test-results row.
+Originally I had separate training scripts for each model, 
+even though most of the dataset loading and training/evaluation logic was the same. 
+This also caused a checkpoint naming issue for R3D, where num_frames was missing 
+from the path and runs with different frame counts could overwrite each other. 
+I moved the shared training logic here and into src/engine, while keeping the model-specific parts in src/models.
+The run configuration is also included in the output names/results so I can keep track of
+ which setup produced each result.
 
 """
 
@@ -41,18 +39,17 @@ def get_args():
 
     p.add_argument("--model", choices=list(MODEL_REGISTRY.keys()), required=True)
 
-    # Paths - default to the same Puhti scratch paths the original scripts used,
-    # overridable via env var or CLI so this also runs on a laptop for testing.
+    # Keep the original cluster paths as defaults, but allow overriding them
+    # through environment variables or CLI when running somewhere else.
     p.add_argument("--data_root", type=str,
                     default=os.environ.get("ECHO_DATA_ROOT", "/scratch/project_2018481/relbouaz/echonet"))
     p.add_argument("--project_root", type=str,
                     default=os.environ.get("ECHO_PROJECT_ROOT", "/scratch/project_2018481/relbouaz/thesis_project"))
 
-    # Data / sampling. Default num_frames=64 per my supervisor's "go with 64"
-    # comment; see the README results section for why 32 had
-    # looked competitive before (most videos are naturally short-ish, so
-    # uniform sampling at 32 vs 64 didn't differ that much in practice - that
-    # stops being true once we sample a real fixed-length clip instead).
+    # Default to 64 frames based on the supervisor feedback. Earlier 32 frame
+    # experiments were quite competitive with uniform sampling, probably because
+    # many videos are relatively short. With fixed length clip sampling, the
+    # difference between 32 and 64 frames becomes more meaningful.
     p.add_argument("--num_frames", type=int, default=64)
     p.add_argument("--img_size", type=int, default=None,
                     help="defaults to 112, or 224 for swin3d if not set")
@@ -75,6 +72,10 @@ def get_args():
                     help="fraction of total optimizer steps used for linear LR warmup")
     p.add_argument("--freeze_epochs", type=int, default=0,
                     help="freeze pretrained backbone for this many epochs before unfreezing (r3d/swin3d only)")
+    p.add_argument("--augment", action="store_true",
+                    help="Phase 5: apply train-time augmentation (small rotation, "
+                         "random-resized-crop, brightness/contrast jitter) - see "
+                         "src/data/augmentation.py. Never applied to val/test.")
 
     # Model-specific
     p.add_argument("--pretrained", action="store_true", default=True)
@@ -157,6 +158,9 @@ def main():
             clip_period=args.clip_period,
             split=split_name,
             seed=args.seed,
+            # Apply augmentation only to training data. make_ds is also used for
+            # validation/test, so check the split here even when --augment is enabled.
+            augment=(args.augment and split_name == "train"),
         )
 
     train_dataset = make_ds(train_df, "train")
@@ -197,7 +201,8 @@ def main():
 
     weights_tag = "pretrained" if args.pretrained else "scratch"
     sampling_tag = f"{args.temporal_sampling}" + (f"p{args.clip_period}" if args.temporal_sampling == "clip" else "")
-    run_name = args.run_name or f"{args.model}_{args.num_frames}f_{args.img_size}px_{sampling_tag}_{weights_tag}"
+    aug_tag = "_aug" if args.augment else ""
+    run_name = args.run_name or f"{args.model}_{args.num_frames}f_{args.img_size}px_{sampling_tag}_{weights_tag}{aug_tag}"
 
     best_model_path = os.path.join(checkpoint_dir, f"{run_name}_best.pt")
     last_model_path = os.path.join(checkpoint_dir, f"{run_name}_last.pt")
@@ -269,6 +274,7 @@ def main():
         "grad_clip": args.grad_clip, "grad_accum_steps": args.grad_accum_steps,
         "warmup_frac": args.warmup_frac, "freeze_epochs": args.freeze_epochs,
         "pretrained": args.pretrained,
+        "augment": args.augment,
         "total_runtime_sec": time.time() - start_time,
     }
     pd.DataFrame([test_row]).to_csv(test_results_path, index=False)

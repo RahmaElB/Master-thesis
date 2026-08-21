@@ -7,14 +7,20 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --output=slurm-eda-%j.out
 
-module purge
-module load pytorch
+# EDA only needs pandas/numpy/matplotlib - no GPU, no torch - so this runs
+# on Roihu's CPU (x86_64) partition using the plain python-data module
+# (confirmed working: pandas 2.3.3), rather than paying for a GPU allocation
+# or dealing with the arm64 Apptainer container for a job that never
+# touches the GPU.
+module --force purge
+module load python-data/3.12-31.03
 
-export ECHO_DATA_ROOT=/scratch/project_2018481/relbouaz/echonet
-export ECHO_PROJECT_ROOT=/scratch/project_2018481/relbouaz/thesis_project6
+export ECHO_DATA_ROOT=/scratch/project_2018481/echonet
+export ECHO_PROJECT_ROOT=/scratch/project_2018481/thesis_project6
+export PYTHONPATH=$ECHO_PROJECT_ROOT
 
 cd $ECHO_PROJECT_ROOT
 
-python -m src.data.eda \
+python3 -m src.data.eda \
     --csv_path $ECHO_DATA_ROOT/FileList.csv \
     --out_dir results/eda

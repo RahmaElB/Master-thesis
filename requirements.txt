@@ -6,6 +6,8 @@ pandas>=2.0
 scikit-learn>=1.3
 matplotlib>=3.7
 tqdm>=4.65
+scipy>=1.10
 
 # optional, only needed if you pass --use_wandb
 wandb>=0.16
+

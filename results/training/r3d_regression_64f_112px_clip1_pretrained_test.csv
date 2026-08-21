@@ -1,0 +1,2 @@
+run_name,model,test_loss,test_mae,test_rmse,test_r2,num_epochs,batch_size,num_frames,img_size,temporal_sampling,clip_period,lr,weight_decay,dropout,grad_clip,pretrained,seed,total_runtime_sec
+r3d_regression_64f_112px_clip1_pretrained,r3d_regression,43.99242459374101,4.82616443081395,6.632678523965019,0.7056627783271011,12,4,64,112,clip,1,0.0001,0.0001,0.3,1.0,True,42,1084.9313180446625
